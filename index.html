@@ -8,7 +8,7 @@
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 body {
-  background: #f0f0f0;
+  background: #fff;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   overflow: hidden;
 }
@@ -20,13 +20,13 @@ svg {
 }
 
 .sphere {
-  fill: #f0f0f0;
+  fill: #fff;
   stroke: #ccc;
   stroke-width: 0.5;
 }
 
 .land {
-  fill: #f0f0f0;
+  fill: #fff;
   stroke: #000;
   stroke-width: 0.3;
 }
@@ -123,6 +123,23 @@ svg {
   flex: 1;
   margin-bottom: 0;
 }
+
+#download-btn {
+  display: block;
+  width: 100%;
+  padding: 8px;
+  margin-top: 8px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: #fff;
+  font-size: 14px;
+  cursor: pointer;
+  color: #333;
+}
+
+#download-btn:hover {
+  background: #f5f5f5;
+}
 </style>
 </head>
 <body>
@@ -175,6 +192,7 @@ svg {
       </select>
     </label>
   </div>
+  <button id="download-btn">PNG保存</button>
 </div>
 
 <svg id="map"></svg>
@@ -242,6 +260,14 @@ svg {
     g.select(".graticule-lon").attr("d", path(graticuleLonGen()));
     g.select(".land").attr("d", path(land));
     g.select(".borders").attr("d", path(borders));
+
+    const dot = g.select(".center-dot");
+    if (projections[currentIndex].centerSupported) {
+      const pt = projection([centerLon, centerLat]);
+      dot.attr("cx", pt[0]).attr("cy", pt[1]).style("display", null);
+    } else {
+      dot.style("display", "none");
+    }
   }
 
   d3.json("https://cdn.jsdelivr.net/npm/world-atlas@2/countries-50m.json").then(world => {
@@ -253,6 +279,8 @@ svg {
     g.append("path").attr("class", "graticule graticule-lon");
     g.append("path").attr("class", "land");
     g.append("path").attr("class", "borders");
+    g.append("circle").attr("class", "center-dot")
+      .attr("r", 3).attr("fill", "#000");
 
     render();
   });
@@ -274,7 +302,7 @@ svg {
   });
 
   document.getElementById("toggle-borders").addEventListener("change", function () {
-    g.select(".borders").style("stroke", this.checked ? null : "#f0f0f0");
+    g.select(".borders").style("stroke", this.checked ? null : "#fff");
   });
 
   function updateGraticuleOptionsVisibility() {
@@ -303,6 +331,50 @@ svg {
 
   document.getElementById("graticule-opacity").addEventListener("change", function () {
     g.selectAll(".graticule").style("stroke-opacity", this.value);
+  });
+
+  document.getElementById("download-btn").addEventListener("click", function () {
+    const svgEl = document.getElementById("map");
+    const clone = svgEl.cloneNode(true);
+    const [w, h] = getSize();
+    clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+    clone.setAttribute("width", w);
+    clone.setAttribute("height", h);
+
+    // Inline styles so the exported image looks correct
+    const styleText = document.querySelector("style").textContent;
+    const styleEl = document.createElementNS("http://www.w3.org/2000/svg", "style");
+    styleEl.textContent = styleText;
+    clone.insertBefore(styleEl, clone.firstChild);
+
+    // Add white background rect
+    const bgRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    bgRect.setAttribute("width", "100%");
+    bgRect.setAttribute("height", "100%");
+    bgRect.setAttribute("fill", "#fff");
+    clone.insertBefore(bgRect, clone.firstChild);
+
+    const serializer = new XMLSerializer();
+    const svgStr = serializer.serializeToString(clone);
+    const blob = new Blob([svgStr], { type: "image/svg+xml;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+
+    const img = new Image();
+    img.onload = function () {
+      const canvas = document.createElement("canvas");
+      canvas.width = w * 2;
+      canvas.height = h * 2;
+      const ctx = canvas.getContext("2d");
+      ctx.scale(2, 2);
+      ctx.drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+
+      const a = document.createElement("a");
+      a.download = "whitemap.png";
+      a.href = canvas.toDataURL("image/png");
+      a.click();
+    };
+    img.src = url;
   });
 
   window.addEventListener("resize", render);
