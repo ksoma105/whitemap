@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>白地図 - Whitemap</title>
+<title>Blank Map</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -145,7 +145,7 @@ svg {
 <body>
 
 <div id="controls">
-  <h2>白地図</h2>
+  <h2>Blank Map</h2>
   <select id="projection-select"></select>
   <label><input type="checkbox" id="toggle-borders" checked> 国境線</label>
   <label><input type="checkbox" id="toggle-lat" checked> 緯線（横）</label>
@@ -370,7 +370,7 @@ svg {
       URL.revokeObjectURL(url);
 
       const a = document.createElement("a");
-      a.download = "whitemap.png";
+      a.download = "blankmap.png";
       a.href = canvas.toDataURL("image/png");
       a.click();
     };
