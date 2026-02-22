@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>白地図 - Whitemap</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: #f0f0f0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  overflow: hidden;
+}
+
+svg {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+}
+
+.sphere {
+  fill: #f0f0f0;
+  stroke: #ccc;
+  stroke-width: 0.5;
+}
+
+.land {
+  fill: #f0f0f0;
+  stroke: #000;
+  stroke-width: 0.3;
+}
+
+.borders {
+  fill: none;
+  stroke: #aaa;
+  stroke-width: 0.5;
+  stroke-linejoin: round;
+}
+
+.graticule {
+  fill: none;
+  stroke: #888;
+  stroke-width: 0.3;
+  stroke-dasharray: 2,2;
+}
+
+.hidden { display: none !important; }
+
+#controls {
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(8px);
+  border-radius: 8px;
+  padding: 16px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.12);
+  z-index: 10;
+  min-width: 200px;
+  font-size: 14px;
+}
+
+#controls h2 {
+  font-size: 15px;
+  margin-bottom: 12px;
+  color: #333;
+}
+
+#controls label {
+  display: block;
+  margin-bottom: 8px;
+  color: #444;
+  cursor: pointer;
+  user-select: none;
+}
+
+#controls select {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 14px;
+  margin-bottom: 12px;
+  background: #fff;
+}
+
+#controls input[type="checkbox"] {
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+#graticule-options {
+  margin-left: 20px;
+  margin-bottom: 8px;
+}
+
+#graticule-options label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+#graticule-options select {
+  flex: 1;
+  margin-bottom: 0;
+}
+</style>
+</head>
+<body>
+
+<div id="controls">
+  <h2>白地図</h2>
+  <select id="projection-select"></select>
+  <label><input type="checkbox" id="toggle-borders" checked> 国境線</label>
+  <label><input type="checkbox" id="toggle-lat" checked> 緯線（横）</label>
+  <label><input type="checkbox" id="toggle-lon" checked> 経線（縦）</label>
+  <div id="graticule-options">
+    <label>太さ
+      <select id="graticule-width">
+        <option value="0.1">0.1</option>
+        <option value="0.3" selected>0.3</option>
+        <option value="0.5">0.5</option>
+        <option value="1">1.0</option>
+        <option value="1.5">1.5</option>
+      </select>
+    </label>
+    <label>スタイル
+      <select id="graticule-style">
+        <option value="2,2" selected>破線</option>
+        <option value="none">実線</option>
+        <option value="1,3">点線</option>
+        <option value="4,2">長破線</option>
+        <option value="4,2,1,2">一点鎖線</option>
+      </select>
+    </label>
+    <label>濃さ
+      <select id="graticule-opacity">
+        <option value="0.2">薄い</option>
+        <option value="0.4">やや薄い</option>
+        <option value="0.6">普通</option>
+        <option value="0.8">やや濃い</option>
+        <option value="1" selected>濃い</option>
+      </select>
+    </label>
+  </div>
+</div>
+
+<svg id="map"></svg>
+
+<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+<script src="https://cdn.jsdelivr.net/npm/d3-geo-projection@4"></script>
+<script src="https://cdn.jsdelivr.net/npm/topojson-client@3"></script>
+<script>
+(function () {
+  const projections = [
+    { name: "メルカトル", factory: () => d3.geoMercator() },
+    { name: "正距方位", factory: () => d3.geoAzimuthalEquidistant() },
+    { name: "正射 (地球儀風)", factory: () => d3.geoOrthographic() },
+    { name: "イコールアース", factory: () => d3.geoEqualEarth() },
+    { name: "ナチュラルアース", factory: () => d3.geoNaturalEarth1() },
+    { name: "正距円筒", factory: () => d3.geoEquirectangular() },
+    { name: "モルワイデ", factory: () => d3.geoMollweide() },
+    { name: "ロビンソン", factory: () => d3.geoRobinson() },
+  ];
+
+  const select = document.getElementById("projection-select");
+  projections.forEach((p, i) => {
+    const opt = document.createElement("option");
+    opt.value = i;
+    opt.textContent = p.name;
+    select.appendChild(opt);
+  });
+
+  const svg = d3.select("#map");
+  const g = svg.append("g");
+  const graticuleLatGen = d3.geoGraticule().stepMinor([360, 10]);
+  const graticuleLonGen = d3.geoGraticule().stepMinor([10, 360]);
+  let land, borders, currentIndex = 0;
+
+  const zoom = d3.zoom()
+    .scaleExtent([0.5, 20])
+    .on("zoom", (event) => {
+      g.attr("transform", event.transform);
+    });
+  svg.call(zoom);
+
+  function getSize() {
+    return [window.innerWidth, window.innerHeight];
+  }
+
+  function createProjection(index) {
+    const [w, h] = getSize();
+    return projections[index].factory()
+      .fitSize([w, h], land);
+  }
+
+  function render() {
+    const [w, h] = getSize();
+    svg.attr("width", w).attr("height", h);
+
+    const projection = createProjection(currentIndex);
+    const path = d3.geoPath(projection);
+
+    g.select(".sphere").attr("d", path({ type: "Sphere" }));
+    g.select(".graticule-lat").attr("d", path(graticuleLatGen()));
+    g.select(".graticule-lon").attr("d", path(graticuleLonGen()));
+    g.select(".land").attr("d", path(land));
+    g.select(".borders").attr("d", path(borders));
+  }
+
+  d3.json("https://cdn.jsdelivr.net/npm/world-atlas@2/countries-50m.json").then(world => {
+    land = topojson.merge(world, world.objects.countries.geometries);
+    borders = topojson.mesh(world, world.objects.countries, (a, b) => a !== b);
+
+    g.append("path").attr("class", "sphere");
+    g.append("path").attr("class", "graticule graticule-lat");
+    g.append("path").attr("class", "graticule graticule-lon");
+    g.append("path").attr("class", "land");
+    g.append("path").attr("class", "borders");
+
+    render();
+  });
+
+  select.addEventListener("change", () => {
+    currentIndex = +select.value;
+    svg.call(zoom.transform, d3.zoomIdentity);
+    render();
+  });
+
+  document.getElementById("toggle-borders").addEventListener("change", function () {
+    g.select(".borders").style("stroke", this.checked ? null : "#f0f0f0");
+  });
+
+  function updateGraticuleOptionsVisibility() {
+    const latOn = document.getElementById("toggle-lat").checked;
+    const lonOn = document.getElementById("toggle-lon").checked;
+    document.getElementById("graticule-options").style.display = (latOn || lonOn) ? "" : "none";
+  }
+
+  document.getElementById("toggle-lat").addEventListener("change", function () {
+    g.select(".graticule-lat").classed("hidden", !this.checked);
+    updateGraticuleOptionsVisibility();
+  });
+
+  document.getElementById("toggle-lon").addEventListener("change", function () {
+    g.select(".graticule-lon").classed("hidden", !this.checked);
+    updateGraticuleOptionsVisibility();
+  });
+
+  document.getElementById("graticule-width").addEventListener("change", function () {
+    g.selectAll(".graticule").style("stroke-width", this.value);
+  });
+
+  document.getElementById("graticule-style").addEventListener("change", function () {
+    g.selectAll(".graticule").style("stroke-dasharray", this.value === "none" ? "0" : this.value);
+  });
+
+  document.getElementById("graticule-opacity").addEventListener("change", function () {
+    g.selectAll(".graticule").style("stroke-opacity", this.value);
+  });
+
+  window.addEventListener("resize", render);
+})();
+</script>
+</body>
+</html>
