@@ -106,6 +106,23 @@ svg {
   flex: 1;
   margin-bottom: 0;
 }
+
+#center-options {
+  margin-left: 20px;
+  margin-bottom: 8px;
+}
+
+#center-options label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+#center-options select {
+  flex: 1;
+  margin-bottom: 0;
+}
 </style>
 </head>
 <body>
@@ -145,6 +162,19 @@ svg {
       </select>
     </label>
   </div>
+  <div id="center-options" style="display: none;">
+    <label>中心地
+      <select id="center-select">
+        <option value="0,0">デフォルト (0, 0)</option>
+        <option value="139.7,35.7">東京</option>
+        <option value="-74,40.7">ニューヨーク</option>
+        <option value="-3.7,40.4">マドリード</option>
+        <option value="37.6,55.8">モスクワ</option>
+        <option value="151.2,-33.9">シドニー</option>
+        <option value="-43.2,-22.9">リオデジャネイロ</option>
+      </select>
+    </label>
+  </div>
 </div>
 
 <svg id="map"></svg>
@@ -156,7 +186,7 @@ svg {
 (function () {
   const projections = [
     { name: "メルカトル", factory: () => d3.geoMercator() },
-    { name: "正距方位", factory: () => d3.geoAzimuthalEquidistant() },
+    { name: "正距方位", factory: () => d3.geoAzimuthalEquidistant(), centerSupported: true },
     { name: "正射 (地球儀風)", factory: () => d3.geoOrthographic() },
     { name: "イコールアース", factory: () => d3.geoEqualEarth() },
     { name: "ナチュラルアース", factory: () => d3.geoNaturalEarth1() },
@@ -178,6 +208,7 @@ svg {
   const graticuleLatGen = d3.geoGraticule().stepMinor([360, 10]);
   const graticuleLonGen = d3.geoGraticule().stepMinor([10, 360]);
   let land, borders, currentIndex = 0;
+  let centerLon = 0, centerLat = 0;
 
   const zoom = d3.zoom()
     .scaleExtent([0.5, 20])
@@ -192,8 +223,11 @@ svg {
 
   function createProjection(index) {
     const [w, h] = getSize();
-    return projections[index].factory()
-      .fitSize([w, h], land);
+    const proj = projections[index].factory();
+    if (projections[index].centerSupported) {
+      proj.rotate([-centerLon, -centerLat]);
+    }
+    return proj.fitSize([w, h], { type: "Sphere" });
   }
 
   function render() {
@@ -225,6 +259,16 @@ svg {
 
   select.addEventListener("change", () => {
     currentIndex = +select.value;
+    document.getElementById("center-options").style.display =
+      projections[currentIndex].centerSupported ? "" : "none";
+    svg.call(zoom.transform, d3.zoomIdentity);
+    render();
+  });
+
+  document.getElementById("center-select").addEventListener("change", function () {
+    const [lon, lat] = this.value.split(",").map(Number);
+    centerLon = lon;
+    centerLat = lat;
     svg.call(zoom.transform, d3.zoomIdentity);
     render();
   });
